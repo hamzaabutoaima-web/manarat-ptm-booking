@@ -40,8 +40,136 @@ CREATE INDEX IF NOT EXISTS idx_bookings_teacher ON bookings(teacher_id,day);''')
    if not password or len(password)<12: raise RuntimeError('Set PTM_ADMIN_PASSWORD to a strong password (12+ characters) before running the application.')
    c.execute("INSERT INTO configuration VALUES('admin_hash',?)",(ph.hash(password),))
 
+# Seed the timetable's teachers at every startup. This is idempotent and keeps
+# existing teacher IDs, bookings, and administrator edits unchanged.
+DEFAULT_TEACHERS = [
+    ('Abdalla Mohamed Ezzelarab', 'Physical Education', 'Boys · Multiple stages'),
+    ('Abdelrahman Elgamal', 'Computer Studies / General Science', 'Boys · Primary (Grades 4–6)'),
+    ('Abdelrehman Alattar', 'Biology US / Chemistry US', 'Boys · Multiple stages'),
+    ('Abdikarin Dayib Abdilahi', 'English', 'Boys · Middle (Grades 7–9)'),
+    ('Abdirahim Ahmed', 'Physical Education', 'Boys · Multiple stages'),
+    ('Abdul Majid Haji', 'Physics UK', 'Boys · High (Grades 10–12)'),
+    ('Abdulellah Ashworth', 'Mathematics', 'Boys · Middle (Grades 7–9)'),
+    ('Abdulkarim Saud Alshaeqi', 'Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Abdullah Mohammed Alqahtani', 'Holy Quran / Islamic Education', 'Boys · High (Grades 10–12)'),
+    ('Abdulmohsen Ibrahim Alfaris', 'Holy Quran / Islamic Education', 'Boys · Multiple stages'),
+    ('Abdulrahman Mohammed Alamari', 'Physical Education', 'Boys · Multiple stages'),
+    ('Abdulrahman Nuri Mousa', 'English', 'Boys · Primary (Grades 4–6)'),
+    ('Abdulwahid Ryland', 'English US', 'Boys · High (Grades 10–12)'),
+    ('Ahmed Abdelghany Marey', 'Art', 'Boys · Primary (Grades 4–6)'),
+    ('Ahmed Fathy', 'Arabic', 'Boys · Multiple stages'),
+    ('Ahmed Fouad Elbahnasy', 'Arabic', 'Boys · Multiple stages'),
+    ('Ahmed Helmy', 'Computer Studies / Mathematics', 'Boys · Primary (Grades 4–6)'),
+    ('Ahmed Ibrahim Mosallam', 'English / English US', 'Boys · Multiple stages'),
+    ('Ahmed Jamil Mabrok', 'Art / English', 'Boys · Primary (Grades 4–6)'),
+    ('Ahmed Salah', 'Mathematics', 'Boys · Middle (Grades 7–9)'),
+    ('Ahmed Shokri Soliman', 'Computer Studies / Mathematics', 'Boys · Primary (Grades 4–6)'),
+    ('Akbar Yousuf', 'English', 'Boys · Primary (Grades 4–6)'),
+    ('Alaa Ahmed Hagar', 'Art', 'Boys · Middle (Grades 7–9)'),
+    ('Amro Kamaleldin Omar', 'Arabic', 'Boys · High (Grades 10–12)'),
+    ('Anas Salem Alqahtani', 'Holy Quran / Islamic Education', 'Boys · Middle (Grades 7–9)'),
+    ('Anwar Shaikh', 'Chemistry UK', 'Boys · Multiple stages'),
+    ('Arsalan Shahbaz', 'Computer Studies', 'Boys · Multiple stages'),
+    ('Asad Ullah', 'Biology US', 'Boys · High (Grades 10–12)'),
+    ('Ashraf Gamal Elbialy', 'Computer Studies UK / Computer Studies US', 'Boys · High (Grades 10–12)'),
+    ('Bassam Ramadan', 'Arabic / Physical Education', 'Boys · Primary (Grades 4–6)'),
+    ('Daud Amir Channa', 'Computer Studies US / Mathematics US', 'Boys · High (Grades 10–12)'),
+    ('Ebrahim Aly Othman', 'Arabic / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Ehab Helaly', 'Arabic / Physical Education', 'Boys · Primary (Grades 4–6)'),
+    ('Elshafee Madani', 'English / Social Studies', 'Boys · Primary (Grades 4–6)'),
+    ('Faisal Gul', 'Biology US / General Science', 'Boys · Multiple stages'),
+    ('Fatai Olawale Bakare', 'AP Physics / Physics US', 'Boys · Multiple stages'),
+    ('Guled Abdullah', 'English', 'Boys · Middle (Grades 7–9)'),
+    ('Hamad Abdulaziz Alturki', 'Holy Quran', 'Boys · High (Grades 10–12)'),
+    ('Hamada Tharwat Abdelrahman', 'Mathematics', 'Boys · Middle (Grades 7–9)'),
+    ('Hameed Ur Toti', 'Physics US', 'Boys · High (Grades 10–12)'),
+    ('Hani Mohammed Habib', 'Islamic Education (Non Arab) / Social Studies', 'Boys · Multiple stages'),
+    ('Hashid Jameel', 'Business Studies US / Entrepreneurship US', 'Boys · High (Grades 10–12)'),
+    ('Hassaan Ahmed Pirzada', 'Mathematics UK', 'Boys · High (Grades 10–12)'),
+    ('Hassan Khalefa Mohmed', 'Arabic / Arabic (Non Arab) / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Hassan Zein', 'English', 'Boys · Primary (Grades 4–6)'),
+    ('Hisham Mohammad Ali', 'AP Chemistry / Chemistry US', 'Boys · High (Grades 10–12)'),
+    ('Ibraheem Miah', 'Economics UK / Economics US / Entrepreneurship US / World History', 'Boys · Multiple stages'),
+    ('Ibrahim Abubakar', 'General Science', 'Boys · Primary (Grades 4–6)'),
+    ('Imraan Ferouz Raghubar', 'English', 'Boys · Middle (Grades 7–9)'),
+    ('Israr Hussain', 'Accounting UK / Accounting US / World History', 'Boys · Multiple stages'),
+    ('Julen Uriarte', 'Mathematics', 'Boys · Middle (Grades 7–9)'),
+    ('Kenneth D Andrews', 'English US', 'Boys · High (Grades 10–12)'),
+    ('Khalid Ahmad Khattak', 'Computer Studies / Computer Studies UK / Computer Studies US', 'Boys · Multiple stages'),
+    ('Khuram Khan', 'Computer Studies UK / Computer Studies US', 'Boys · Multiple stages'),
+    ('Maged Mohammed Hendi', 'Physical Education', 'Boys · Multiple stages'),
+    ('Martin Garcia Jr', 'English US', 'Boys · Multiple stages'),
+    ('Mohamed Abdelhamid Sakr', 'Mathematics UK / Mathematics US', 'Boys · Middle (Grades 7–9)'),
+    ('Mohamed Abouelmaaty Husin', 'Arabic / Arabic (Non Arab) / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Mohamed Ahmed Elsanboubi', 'Arabic / Arabic (Non Arab)', 'Boys · Primary (Grades 4–6)'),
+    ('Mohamed Elbardawil', 'General Science', 'Boys · Middle (Grades 7–9)'),
+    ('Mohamed Ezzat Khamis', 'Arabic / Arabic (Non Arab) / Physical Education', 'Boys · Primary (Grades 4–6)'),
+    ('Mohamed Qamrul Mannan', 'Mathematics UK / Mathematics US', 'Boys · Multiple stages'),
+    ('Mohamed Sharif Eidarus', 'Mathematics', 'Boys · Primary (Grades 4–6)'),
+    ('Mohamed Tayea Awadallah', 'Mathematics US', 'Boys · High (Grades 10–12)'),
+    ('Mohammed Alasawy', 'Holy Quran / Islamic Education', 'Boys · Multiple stages'),
+    ('Mohammed Waseem', 'English UK / English US / English as a Second Language', 'Boys · Multiple stages'),
+    ('Mohammed Yousuf', 'English', 'Boys · Middle (Grades 7–9)'),
+    ('Mohmmed Saeed Alamri', 'Holy Quran / Islamic Education', 'Boys · High (Grades 10–12)'),
+    ('Moustafa Ahmad Nasr', 'Social Studies / World History', 'Boys · Multiple stages'),
+    ('Muath Yousf Qashou', 'Social Studies / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Muddassir Shafi', 'AP Mathematics / Mathematics UK / Mathematics US', 'Boys · Multiple stages'),
+    ('Muhammad Abrar Hussain', 'English', 'Boys · Multiple stages'),
+    ('Muhammad Ahsan Abbas', 'Physics US', 'Boys · High (Grades 10–12)'),
+    ('Muhammad Avais Chauhdry', 'Biology UK', 'Boys · High (Grades 10–12)'),
+    ('Muhammad Qasim', 'General Science', 'Boys · Multiple stages'),
+    ('Muhammad Usman', 'Computer Studies / General Science', 'Boys · Primary (Grades 4–6)'),
+    ('Muhammed Waqas Habib', 'Physics UK', 'Boys · High (Grades 10–12)'),
+    ('Munahi Fayi Alqahtani', 'Physical Education', 'Boys · Multiple stages'),
+    ('Musima Benven Hansel', 'AP Biology / Biology UK / Biology US', 'Boys · High (Grades 10–12)'),
+    ('Mustafa Kazim Hosein', 'English', 'Boys · Primary (Grades 4–6)'),
+    ('Mustafa Shah', 'General Science / Physics US', 'Boys · Multiple stages'),
+    ('Nadeem Patel', 'English / Islamic Education (Non Arab) / Physical Education', 'Boys · Primary (Grades 4–6)'),
+    ('Nahar Mohammed Alotaibi', 'Holy Quran / Islamic Education', 'Boys · Multiple stages'),
+    ('Osama Tariq Rehmani', 'AP Mathematics / Mathematics US', 'Boys · High (Grades 10–12)'),
+    ('Rafay Zia  Mir', 'Physics UK', 'Boys · Middle (Grades 7–9)'),
+    ('Ramadhan Peart', 'Computer Studies / English / Physical Education', 'Boys · Primary (Grades 4–6)'),
+    ('Rehman Javaid Iqbal', 'Biology UK / Biology US', 'Boys · Multiple stages'),
+    ('Saaqib Siddiqui', 'Business Studies UK / Economics US / Entrepreneurship US', 'Boys · Multiple stages'),
+    ('Sameh Abdelghaffar Elsherbini', 'Arabic (Non Arab) / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Saud Al-Maimouni', 'Holy Quran / Islamic Education', 'Boys · Primary (Grades 4–6)'),
+    ('Sayed Ali Farrag', 'Chemistry US', 'Boys · High (Grades 10–12)'),
+    ('Shafiq Mohammed', 'English (First Language) / English UK / English as a Second Language', 'Boys · Multiple stages'),
+    ('Shafiq Ur Rehman', 'Chemistry UK', 'Boys · High (Grades 10–12)'),
+    ('Shammus Ali', 'Business Studies UK / Business Studies US / World Geography', 'Boys · Multiple stages'),
+    ('Stephen Blogg', 'Computer Studies', 'Boys · Multiple stages'),
+    ('Suliman Mohammed Almayouf', 'Holy Quran / Islamic Education', 'Boys · Multiple stages'),
+    ('Talal Alaaeldin', 'Arabic / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Tamer Sabry', 'Arabic / Social Studies (Saudi Curriculum)', 'Boys · Multiple stages'),
+    ('Tariq Ahmed Alkhaldi', 'Chemistry US / General Science', 'Boys · Multiple stages'),
+    ('Wasif Sayeed Khaldi', 'AP Computer Science / Computer Studies US', 'Boys · High (Grades 10–12)'),
+    ('Yasser Mohammed Abdelghaffar', 'General Science', 'Boys · Primary (Grades 4–6)'),
+    ('Yunus Haji', 'Mathematics', 'Boys · Primary (Grades 4–6)'),
+    ('Zakariya Absiye', 'Islamic Education / Islamic Education (Non Arab) / Social Studies', 'Boys · Multiple stages'),
+    ('Zubair Naeem Chughtai', 'Mathematics', 'Boys · Primary (Grades 4–6)'),
+
+]
+
+def seed_teacher_directory():
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            for name, subject, section in DEFAULT_TEACHERS:
+                found = c.execute('SELECT id FROM teachers WHERE name=? COLLATE NOCASE', (name,)).fetchone()
+                if not found:
+                    c.execute(
+                        'INSERT INTO teachers(name,subject,section) VALUES(?,?,?)',
+                        (name,subject,section)
+                    )
+            c.execute('COMMIT')
+        except Exception:
+            c.execute('ROLLBACK')
+            raise
+
 @app.on_event('startup')
-def start():init()
+def start():
+    init()
+    seed_teacher_directory()
 
 @app.get('/',response_class=HTMLResponse)
 def home():return (BASE/'static'/'index.html').read_text(encoding='utf8')
